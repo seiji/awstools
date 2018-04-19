@@ -15,11 +15,8 @@
 package cmd
 
 import (
-	"bytes"
 	"fmt"
-	"net"
 	"os"
-	"sort"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -28,13 +25,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/rds"
 )
 
 var timeout time.Duration
 
 var rootCmd = &cobra.Command{
-	Use:   "ec2-hosts",
+	Use:   "rds-hosts",
 	Short: "Generate hosts file from instances",
 	Long: `Generate hosts file between instance name and public_ip or private_ip
 `,
@@ -57,72 +54,18 @@ var rootCmd = &cobra.Command{
 			return
 		}
 
-		svc := ec2.New(sess)
-		req := &ec2.DescribeInstancesInput{}
-		var res *ec2.DescribeInstancesOutput
-		if res, err = svc.DescribeInstances(req); err != nil {
+		svc := rds.New(sess)
+		req := &rds.DescribeDBInstancesInput{}
+		var res *rds.DescribeDBInstancesOutput
+		if res, err = svc.DescribeDBInstances(req); err != nil {
 			return
 		}
 
-		instances := make(map[*net.IP]*ec2.Instance, 0)
-		var key string
-
-		for _, r := range res.Reservations {
-			for _, i := range r.Instances {
-				if *i.State.Name != "running" {
-					continue
-				}
-				if key = InstancePublicIp(i); key != "" {
-					ip := net.ParseIP(key)
-					instances[&ip] = i
-				}
-			}
-		}
-
-		for _, pubIp := range SortedIpKeys(instances) {
-			fmt.Printf("%s\t%s\n", pubIp, InstanceName(instances[pubIp]))
+		for _, i := range res.DBInstances {
+			fmt.Printf("%s\t%s\n", *i.Endpoint.Address, *i.DBInstanceIdentifier)
 		}
 		return
 	},
-}
-
-func InstanceName(i *ec2.Instance) (name string) {
-	for _, t := range i.Tags {
-		if *t.Key == "Name" {
-			name = *t.Value
-			break
-		}
-	}
-	return
-}
-
-func InstancePublicIp(i *ec2.Instance) (publicIp string) {
-	if i.PublicIpAddress != nil {
-		publicIp = *i.PublicIpAddress
-	}
-	return
-}
-
-func SortedStringKeys(m map[string]*ec2.Instance) []string {
-	i, sorted := 0, make([]string, len(m))
-	for k := range m {
-		sorted[i] = k
-		i++
-	}
-	sort.Strings(sorted)
-	return sorted
-}
-
-func SortedIpKeys(m map[*net.IP]*ec2.Instance) []*net.IP {
-	i, sorted := 0, make([]*net.IP, len(m))
-	for k := range m {
-		sorted[i] = k
-		i++
-	}
-	sort.Slice(sorted, func(i, j int) bool {
-		return bytes.Compare(*sorted[i], *sorted[j]) < 0
-	})
-	return sorted
 }
 
 func Execute() {
